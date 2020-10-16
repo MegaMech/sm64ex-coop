@@ -28,6 +28,12 @@ struct CustomMenuButtonScale {
 };
 extern struct CustomMenuButtonScale gButtonScale;
 
+struct CustomOverlay {
+    struct Object* object;
+};
+
+void custom_overlay_create(void);
+
 extern u8 gMenuStringAlpha;
 
 void custom_menu_system_init(void);
@@ -42,6 +48,7 @@ void custom_menu_cursor_click(f32 x, f32 y);
 void custom_menu_open(struct CustomMenu* menu);
 void custom_menu_close(void);
 void custom_menu_close_system(void);
+void custom_menu_closed_system(void);
 
 void bhv_menu_button_growing_from_custom(struct Object* button);
 void bhv_menu_button_shrinking_to_custom(struct Object* button);

@@ -19,7 +19,6 @@
 #include "audio/external.h"
 #include "config.h"
 #include "pc/network/version.h"
-#include "pc/network/discord/discord.h"
 
 #define MAIN_MENU_HEADER_TEXT "SM64 COOP"
 
@@ -87,12 +86,7 @@ static void host_menu_draw_strings(void) {
         char warning[128];
         snprintf(warning, 127, "Port forward '%d' in network router settings or use Hamachi.", configHostPort);
         print_generic_ascii_string(0, 5, warning);
-    } else if ((configNetworkSystem == 0) && gDiscordFailed) {
-        f32 red = (f32)fabs(sin(gGlobalTimer / 20.0f));
-        gDPSetEnvColor(gDisplayListHead++, 222, 222 * red, 222 * red, gMenuStringAlpha);
-        char warning[128];
-        snprintf(warning, 127, "Discord failed to initialize.");
-        print_generic_ascii_string(0, 15, warning);
+
     }
 }
 
@@ -219,7 +213,6 @@ static void connect_menu_on_connection_attempt(void) {
 
     network_set_system(NS_SOCKET);
     network_init(NT_CLIENT);
-
 }
 
 static void connect_menu_on_click(void) {
@@ -286,7 +279,11 @@ void custom_menu_init(struct CustomMenu* head) {
 
 void custom_menu_loop(void) {
     // we've received an event that makes us exit the menus
-    if (sGotoGame) { sSelectedFileNum = sGotoGame; }
+    if (sGotoGame) {
+        sSelectedFileNum = sGotoGame;
+        custom_menu_close_system();
+        custom_menu_destroy();
+    }
 
     // force-start the load when command-line server hosting
     if (gNetworkType == NT_SERVER && sSelectedFileNum == 0) {

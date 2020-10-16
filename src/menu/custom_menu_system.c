@@ -17,9 +17,12 @@
 #include "gfx_dimensions.h"
 #include "config.h"
 
+#define MAX_ERROR_MESSAGE_LENGTH 128
+
 static struct CustomMenu* sHead = NULL;
 static struct CustomMenu* sCurrentMenu = NULL;
 static struct CustomMenu* sLastMenu = NULL;
+static struct CustomMenu* overlay = NULL;
 struct CustomMenuButtonScale gButtonScale = {
     .small = 0.08111111f,
     .medium = 0.09511111f,
@@ -27,12 +30,8 @@ struct CustomMenuButtonScale gButtonScale = {
 };
 
 u8 gMenuStringAlpha = 255;
-
-struct ErrorDialog {
-    u8* dialog;
-    struct ErrorDialog* next;
-};
-static struct ErrorDialog* sErrorDialog = NULL;
+static u8 sErrorDialog[MAX_ERROR_MESSAGE_LENGTH] = { 0 };
+static u8 sErrorDialogShow = FALSE;
 
 struct CustomMenuButton* custom_menu_create_button(struct CustomMenu* parent, char* label, u16 x, u16 y, f32 scale, s32 clickSound, void (*on_click)(void)) {
     struct CustomMenuButton* button = calloc(1, sizeof(struct CustomMenuButton));
@@ -74,7 +73,25 @@ struct CustomMenu* custom_menu_create(struct CustomMenu* parent, char* label, u1
     return menu;
 }
 
+void custom_overlay_create(void) {
+
+    overlay = calloc(1, sizeof(struct CustomOverlay));
+    //overlay->me = calloc(1, sizeof(struct CustomMenuButton));
+
+    struct Object* obj = spawn_object_rel_with_rot(gCurrentObject, MODEL_MAIN_MENU_GREEN_SCORE_BUTTON, bhvMenuButton, 0, 0, 0, 0, 0, 0);
+    obj->oParentRelativePosZ += 1000;
+    obj->oMenuButtonState = MENU_BUTTON_STATE_FULLSCREEN;
+    obj->oFaceAngleYaw = 0x8000;
+    obj->oFaceAngleRoll = 0;
+    obj->oMenuButtonScale = 9.0f;
+    obj->oMenuButtonOrigPosZ = obj->oPosZ;
+    obj->oMenuButtonOrigPosX = 99999;
+    obj->oMenuButtonIsCustom = 1;
+    overlay->parent = obj;
+}
+
 void custom_menu_system_init(void) {
+
     // allocate the main menu and set it to current
     sHead = calloc(1, sizeof(struct CustomMenu));
     sHead->me = calloc(1, sizeof(struct CustomMenuButton));
@@ -96,7 +113,8 @@ void custom_menu_system_init(void) {
 }
 
 void custom_menu_destroy(void) {
-    /* TODO: we should probably clean up all of this stuff */
+    free(overlay);
+    free(sHead);
 }
 
 void custom_menu_system_loop(void) {
@@ -185,6 +203,9 @@ void custom_menu_close_system(void) {
     sHead->me->object->oMenuButtonState = MENU_BUTTON_STATE_SHRINKING;
     gInCustomMenu = FALSE;
 }
+void custom_menu_closed_system(void) {
+    gInCustomMenu = FALSE;
+}
 
 static s32 cursor_inside_button(struct CustomMenuButton* button, f32 cursorX, f32 cursorY) {
     f32 x = button->object->oParentRelativePosX;
@@ -212,15 +233,9 @@ void custom_menu_cursor_click(f32 cursorX, f32 cursorY) {
     if (!(gPlayer3Controller->buttonPressed & cursorClickButtons)) { return; }
     if (sCurrentMenu->me->object->oMenuButtonState != MENU_BUTTON_STATE_FULLSCREEN) { return; }
 
-    if (sErrorDialog != NULL) {
-        struct ErrorDialog* current = sErrorDialog;
-        sErrorDialog = sErrorDialog->next;
-        free(current->dialog);
-        free(current);
+    if (sErrorDialogShow) {
+        sErrorDialogShow = FALSE;
         play_sound(SOUND_ACTION_BONK, gDefaultSoundArgs);
-        if (sErrorDialog != NULL) {
-            play_sound(SOUND_MARIO_OOOF2, gDefaultSoundArgs);
-        }
         return;
     }
 
@@ -302,7 +317,7 @@ void custom_menu_print_strings(void) {
 
 void custom_menu_render_top(void) {
     // print error message
-    if (sErrorDialog != NULL) {
+    if (sErrorDialogShow) {
         // black screen
         create_dl_translation_matrix(MENU_MTX_PUSH, GFX_DIMENSIONS_FROM_LEFT_EDGE(0), 240.0f, 0);
         create_dl_scale_matrix(MENU_MTX_NOPUSH, GFX_DIMENSIONS_ASPECT_RATIO * SCREEN_HEIGHT / 130.0f, 3.0f, 1.0f);
@@ -312,17 +327,17 @@ void custom_menu_render_top(void) {
 
         // print text
         gSPDisplayList(gDisplayListHead++, dl_ia_text_begin);
-        f32 textWidth = get_generic_dialog_width(sErrorDialog->dialog);
-        f32 textHeight = get_generic_dialog_height(sErrorDialog->dialog);
+        f32 textWidth = get_generic_dialog_width(sErrorDialog);
+        f32 textHeight = get_generic_dialog_height(sErrorDialog);
 
         f32 xPos = (SCREEN_WIDTH - textWidth) / 2.0f;
         f32 yPos = (SCREEN_HEIGHT + textHeight) / 2.0f;
 
         gDPSetEnvColor(gDisplayListHead++, 30, 30, 30, 255);
-        print_generic_string(xPos, yPos, sErrorDialog->dialog);
+        print_generic_string(xPos, yPos, sErrorDialog);
 
         gDPSetEnvColor(gDisplayListHead++, 255, 255, 255, 255);
-        print_generic_string((xPos - 1), (yPos + 1), sErrorDialog->dialog);
+        print_generic_string((xPos - 1), (yPos + 1), sErrorDialog);
 
         gSPDisplayList(gDisplayListHead++, dl_ia_text_end);
     }
@@ -388,22 +403,7 @@ void bhv_menu_button_shrinking_to_custom(struct Object* button) {
 }
 
 void custom_menu_error(char* message) {
-    struct ErrorDialog* errorDialog = malloc(sizeof(struct ErrorDialog));
-    memset(errorDialog, 0, sizeof(struct ErrorDialog));
-    errorDialog->dialog = malloc(sizeof(u8) * (strlen(message) + 1));
-    str_ascii_to_dialog(message, errorDialog->dialog, strlen(message));
-
-    if (sErrorDialog == NULL) {
-        sErrorDialog = errorDialog;
-        play_sound(SOUND_MARIO_OOOF2, gDefaultSoundArgs);
-    } else {
-        struct ErrorDialog* item = sErrorDialog;
-        while (item != NULL) {
-            if (item->next == NULL) {
-                item->next = errorDialog;
-                break;
-            }
-            item = item->next;
-        }
-    }
+    str_ascii_to_dialog(message, sErrorDialog, MIN(strlen(message), MAX_ERROR_MESSAGE_LENGTH - 1));
+    if (!sErrorDialogShow) { play_sound(SOUND_MARIO_OOOF2, gDefaultSoundArgs); }
+    sErrorDialogShow = TRUE;
 }
